@@ -38,7 +38,7 @@ def ocr_and_click_process():
         time.sleep(1)
 
 # Функция для работы с цветовой маской в пространстве LAB и кликов по найденным областям
-def mask_click_process(click_flag):
+def mask_click_process(pause_event):
     l_min, l_max = 0, 255
     a_min, a_max = 172, 255
     b_min, b_max = 149, 177
@@ -67,8 +67,7 @@ def mask_click_process(click_flag):
             click_x = x + w // 2
             click_y = y + h
             pyautogui.rightClick(click_x, click_y)
-            with click_flag.get_lock():  # Блокируем доступ к общей переменной
-                click_flag.value = 1  # Устанавливаем флаг, что клик произошёл
+            pause_event.set()  # Устанавливаем событие паузы
             time.sleep(15)
             print(f"Клик на маске: ({click_x}, {click_y})")
 
@@ -82,20 +81,20 @@ def mask_click_process(click_flag):
     main()
 
 # Функция для периодического клика в центре экрана
-def center_click_process(click_flag):
+def center_click_process(pause_event):
     while True:
+        # Проверяем событие паузы перед кликом
+        if pause_event.is_set():
+            time.sleep(20)  # Пауза на 20 секунд, если событие активно
+            pause_event.clear()  # Сбрасываем событие
+        
         screen_width, screen_height = pyautogui.size()
         center_x = screen_width // 2
         center_y = screen_height // 2
         pyautogui.moveTo(center_x, center_y)
         pyautogui.click(button='right')
-        with click_flag.get_lock():  # Блокируем доступ к общей переменной
-            if click_flag.value == 1:  # Проверяем, был ли клик в mask_click_process
-                sleep_time = 140  # 120 + 20 секунд
-                click_flag.value = 0  # Сбрасываем флаг
-            else:
-                sleep_time = 120  # Базовое время
-        time.sleep(sleep_time)  # Используем вычисленное время
+        
+        time.sleep(120)  # Оригинальная задержка
 
 # Функция для поиска пикселя определенного цвета и клика по нему
 def find_pixel_and_click_process():
@@ -146,8 +145,8 @@ def move_mouse_to_center_on_edge():
         time.sleep(0.01)
 
 if __name__ == '__main__':
-    # Создаём общую переменную для передачи информации о клике между процессами
-    click_flag = multiprocessing.Value('i', 0)  # 'i' — целое число, начальное значение 0
+    # Создаём объект Event для сигнализации о паузе
+    pause_event = multiprocessing.Event()
 
     processes = []
 
@@ -155,8 +154,7 @@ if __name__ == '__main__':
     processes.append(ocr_process)
     ocr_process.start()
 
-    # Передаём click_flag в mask_click_process
-    mask_process = multiprocessing.Process(target=mask_click_process, args=(click_flag,))
+    mask_process = multiprocessing.Process(target=mask_click_process, args=(pause_event,))
     processes.append(mask_process)
     mask_process.start()
 
@@ -164,8 +162,7 @@ if __name__ == '__main__':
     processes.append(pixel_process)
     pixel_process.start()
 
-    # Передаём click_flag в center_click_process
-    center_process = multiprocessing.Process(target=center_click_process, args=(click_flag,))
+    center_process = multiprocessing.Process(target=center_click_process, args=(pause_event,))
     processes.append(center_process)
     center_process.start()
 
