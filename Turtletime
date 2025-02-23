@@ -1,0 +1,177 @@
+import multiprocessing
+import numpy as np
+import easyocr
+import mss
+import time
+import pyautogui
+import cv2
+from PIL import ImageGrab
+
+# Функция для распознавания текста на экране и клика по определенным словам
+def ocr_and_click_process():
+    words_to_find = ["bone", "xiphoid", "living", "blood", "blue"]
+    time.sleep(5)
+    reader = easyocr.Reader(['en'])
+
+    while True:
+        pyautogui.keyDown('alt')
+        with mss.mss() as sct:
+            monitor = {"top": 0, "left": 0, "width": 1920, "height": 800}
+            screenshot = sct.grab(monitor)
+            img = np.array(screenshot)
+
+        result = reader.readtext(img, detail=1)
+
+        for detection in result:
+            text = detection[1]
+            bbox = detection[0]
+
+            for word in words_to_find:
+                if word.lower() in text.lower():
+                    x_center = (bbox[0][0] + bbox[2][0]) / 2
+                    y_center = (bbox[0][1] + bbox[2][1]) / 2
+                    time.sleep(15)
+                    pyautogui.click(x=x_center, y=y_center, button='right')
+                    time.sleep(1)
+                    print(f"Клик правой кнопкой мыши по слову: {word}")
+                    break
+        time.sleep(1)
+
+# Функция для работы с цветовой маской в пространстве LAB и кликов по найденным областям
+def mask_click_process(click_flag):
+    l_min, l_max = 0, 255
+    a_min, a_max = 172, 255
+    b_min, b_max = 149, 177
+    min_area = 10
+
+    def take_screenshot():
+        screenshot = np.array(ImageGrab.grab(bbox=(0, 0, 1920, 800)))
+        return cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR)
+
+    def create_mask(screenshot):
+        lab = cv2.cvtColor(screenshot, cv2.COLOR_BGR2LAB)
+        L, A, B = cv2.split(lab)
+        mask_L = cv2.inRange(L, l_min, l_max)
+        mask_A = cv2.inRange(A, a_min, a_max)
+        mask_B = cv2.inRange(B, b_min, b_max)
+        mask = cv2.bitwise_and(mask_L, cv2.bitwise_and(mask_A, mask_B))
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        filtered_contours = [contour for contour in contours if cv2.contourArea(contour) > min_area]
+        return mask, filtered_contours
+
+    def auto_click_on_mask(contours):
+        if contours:
+            contour = contours[0]
+            x, y, w, h = cv2.boundingRect(contour)
+            click_x = x + w // 2
+            click_y = y + h
+            pyautogui.rightClick(click_x, click_y)
+            with click_flag.get_lock():  # Блокируем доступ к общей переменной
+                click_flag.value = 1  # Устанавливаем флаг, что клик произошёл
+            time.sleep(15)
+            print(f"Клик на маске: ({click_x}, {click_y})")
+
+    def main():
+        while True:
+            screenshot = take_screenshot()
+            mask, contours = create_mask(screenshot)
+            auto_click_on_mask(contours)
+            time.sleep(1)
+
+    main()
+
+# Функция для периодического клика в центре экрана
+def center_click_process(click_flag):
+    while True:
+        screen_width, screen_height = pyautogui.size()
+        center_x = screen_width // 2
+        center_y = screen_height // 2
+        pyautogui.moveTo(center_x, center_y)
+        pyautogui.click(button='right')
+        with click_flag.get_lock():  # Блокируем доступ к общей переменной
+            if click_flag.value == 1:  # Проверяем, был ли клик в mask_click_process
+                sleep_time = 140  # 120 + 20 секунд
+                click_flag.value = 0  # Сбрасываем флаг
+            else:
+                sleep_time = 120  # Базовое время
+        time.sleep(sleep_time)  # Используем вычисленное время
+
+# Функция для поиска пикселя определенного цвета и клика по нему
+def find_pixel_and_click_process():
+    time.sleep(5)
+    target_color = (205, 118, 46)
+    offset_x = 50
+    offset_y = 50
+    search_width = 1920
+    search_height = 800
+
+    def find_pixel_and_click(color):
+        screenshot = ImageGrab.grab()
+        width, height = screenshot.size
+        start_x = (width - search_width) // 2
+        start_y = (height - search_height) // 2
+        end_x = start_x + search_width
+        end_y = start_y + search_height
+        pixels = screenshot.load()
+
+        for x in range(start_x, end_x):
+            for y in range(start_y, end_y):
+                if pixels[x, y][:3] == color:
+                    click_x = x + offset_x
+                    click_y = y + offset_y
+                    click_x = min(max(0, click_x), width - 1)
+                    click_y = min(max(0, click_y), height - 1)
+                    print(f"Найден пиксель с цветом {color} на координатах ({x}, {y}), кликаю на ({click_x}, {click_y})")
+                    pyautogui.rightClick(click_x, click_y)
+                    time.sleep(20)
+                    return True
+        time.sleep(10)
+        print(f"Пиксель с цветом {color} не найден.")
+        return False
+
+    while True:
+        find_pixel_and_click(target_color)
+
+# Функция для перемещения мыши в центр, если она находится на краю экрана
+def move_mouse_to_center_on_edge():
+    screen_width, screen_height = 1920, 1080
+    center_x, center_y = screen_width // 2, screen_height // 2
+
+    while True:
+        x, y = pyautogui.position()
+        if x <= 0 or x >= screen_width - 1 or y <= 0 or y >= screen_height - 1:
+            pyautogui.moveTo(center_x, center_y)
+            pyautogui.rightClick(center_x, center_y)
+        time.sleep(0.01)
+
+if __name__ == '__main__':
+    # Создаём общую переменную для передачи информации о клике между процессами
+    click_flag = multiprocessing.Value('i', 0)  # 'i' — целое число, начальное значение 0
+
+    processes = []
+
+    ocr_process = multiprocessing.Process(target=ocr_and_click_process)
+    processes.append(ocr_process)
+    ocr_process.start()
+
+    # Передаём click_flag в mask_click_process
+    mask_process = multiprocessing.Process(target=mask_click_process, args=(click_flag,))
+    processes.append(mask_process)
+    mask_process.start()
+
+    pixel_process = multiprocessing.Process(target=find_pixel_and_click_process)
+    processes.append(pixel_process)
+    pixel_process.start()
+
+    # Передаём click_flag в center_click_process
+    center_process = multiprocessing.Process(target=center_click_process, args=(click_flag,))
+    processes.append(center_process)
+    center_process.start()
+
+    move_mouse_process = multiprocessing.Process(target=move_mouse_to_center_on_edge)
+    processes.append(move_mouse_process)
+    move_mouse_process.start()
+
+    for process in processes:
+        process.join()
