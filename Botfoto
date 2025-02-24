@@ -1,0 +1,91 @@
+import asyncio
+from aiogram import Bot, Dispatcher
+from aiogram.filters import Command
+from aiogram.types import Message
+import cv2
+import numpy as np
+import mss
+import socket
+
+
+
+# Токен бота
+BOT_TOKEN = '7802533421:AAFLEWg89EaNgLwUYyIe47-kCj3SdEhjw8Q'
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+computer_name = socket.gethostname()
+is_searching = False
+
+# Загружаем шаблон изображения (нужно поместить botbot.png в ту же папку)
+template = cv2.imread('botbot.png', 0)
+if template is None:
+    raise FileNotFoundError("Файл botbot.png не найден!")
+w, h = template.shape[::-1]
+
+
+async def image_search_and_notify(chat_id: int):
+    global is_searching
+    await asyncio.sleep(5)
+
+    while is_searching:
+        try:
+            with mss.mss() as sct:
+                monitor = {"top": 0, "left": 0, "width": 1920, "height": 800}
+                screenshot = sct.grab(monitor)
+                img = np.array(screenshot)
+                # Конвертируем в формат BGR для OpenCV
+                img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+
+            # Преобразуем в оттенки серого
+            img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            template_gray = template
+
+            # Поиск совпадений
+            result = cv2.matchTemplate(img_gray, template_gray, cv2.TM_CCOEFF_NORMED)
+            threshold = 0.8  # Порог совпадения (можно настроить)
+            locations = np.where(result >= threshold)
+
+            if len(locations[0]) > 0:
+                await bot.send_message(chat_id, f"Изображение botbot.png найдено на {computer_name}!")
+                print(f"Найдено изображение botbot.png в {len(locations[0])} местах")
+
+        except Exception as e:
+            print(f"Ошибка при поиске изображения: {e}")
+
+        await asyncio.sleep(10)
+
+
+@dp.message(Command(commands=["start"]))
+async def start_command(message: Message):
+    await message.reply("Привет! Я бот для поиска изображения botbot.png на экране.\n"
+                        "Используй /search для начала поиска\n"
+                        "и /stop для остановки.")
+
+
+@dp.message(Command(commands=["search"]))
+async def search_command(message: Message):
+    global is_searching
+    if not is_searching:
+        is_searching = True
+        await message.reply(f"Начинаю поиск изображения на {computer_name}...")
+        asyncio.create_task(image_search_and_notify(message.chat.id))
+    else:
+        await message.reply("Поиск уже запущен!")
+
+
+@dp.message(Command(commands=["stop"]))
+async def stop_command(message: Message):
+    global is_searching
+    if is_searching:
+        is_searching = False
+        await message.reply("Поиск остановлен.")
+    else:
+        await message.reply("Поиск и так не запущен.")
+
+
+async def main():
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
