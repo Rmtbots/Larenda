@@ -1,0 +1,87 @@
+import asyncio
+from aiogram import Bot, Dispatcher
+from aiogram.filters import Command
+from aiogram.types import Message
+import easyocr
+import mss
+import numpy as np
+import socket
+
+# Токен бота
+BOT_TOKEN = '7802533421:AAFLEWg89EaNgLwUYyIe47-kCj3SdEhjw8Q'
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+computer_name = socket.gethostname()
+is_searching = False
+
+
+async def ocr_and_notify(chat_id: int):
+    global is_searching
+    words_to_find = ["team"]
+    await asyncio.sleep(5)  # Исправлено!
+
+    try:
+        reader = easyocr.Reader(['en'])
+    except Exception as e:
+        print(f"Ошибка инициализации EasyOCR: {e}")
+        return
+
+    while is_searching:
+        try:
+            with mss.mss() as sct:
+                monitor = {"top": 0, "left": 0, "width": 1920, "height": 800}
+                screenshot = sct.grab(monitor)
+                img = np.array(screenshot)
+
+            result = reader.readtext(img, detail=1)
+            print(f"Распознанный текст: {result}")  # Отладка
+
+            for detection in result:
+                text = detection[1]
+                print(f"Проверяем текст: {text}")  # Отладка
+
+                for word in words_to_find:
+                    if word.lower() in text.lower():
+                        await bot.send_message(chat_id, f"Слово найдено на {computer_name}: {word}")
+                        print(f"Найдено слово: {word}")
+                        break
+        except Exception as e:
+            print(f"Ошибка во время OCR: {e}")
+
+        await asyncio.sleep(10)
+
+
+@dp.message(Command(commands=["start"]))
+async def start_command(message: Message):
+    await message.reply("Привет! Я бот для поиска слов на экране.\n"
+                        "Используй /search для начала поиска\n"
+                        "и /stop для остановки.")
+
+
+@dp.message(Command(commands=["search"]))
+async def search_command(message: Message):
+    global is_searching
+    if not is_searching:
+        is_searching = True
+        await message.reply(f"Начинаю поиск слов на {computer_name}...")
+        asyncio.create_task(ocr_and_notify(message.chat.id))
+    else:
+        await message.reply("Поиск уже запущен!")
+
+
+@dp.message(Command(commands=["stop"]))
+async def stop_command(message: Message):
+    global is_searching
+    if is_searching:
+        is_searching = False
+        await message.reply("Поиск остановлен.")
+    else:
+        await message.reply("Поиск и так не запущен.")
+
+
+async def main():
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
