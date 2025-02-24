@@ -1,0 +1,31 @@
+import torch
+import pyautogui
+import numpy as np
+import cv2
+from PIL import Image
+import time
+
+time.sleep(5)
+
+# Загрузка предобученной модели YOLOv5
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Можно заменить на yolov5m, yolov5l или свою модель
+
+# Сделать скриншот экрана
+screenshot = pyautogui.screenshot()
+image = np.array(screenshot)
+image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Переводим в формат BGR для OpenCV
+
+# Сохранение скриншота (необязательно)
+cv2.imwrite("screenshot.png", image)
+
+# Преобразование изображения в PIL-формат для YOLO
+image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+
+# Обнаружение объектов
+results = model(image_pil)
+
+# Отображение результатов
+results.show()  # Покажет изображение с найденными объектами
+
+# Можно также получить координаты объектов
+print(results.pandas().xyxy[0])  # Выводит DataFrame с координатами
