@@ -140,14 +140,14 @@ def find_pixel_and_click_process():
         find_pixel_and_click(target_color)
 
 
-# Функция для перемещения мыши в центр, если она находится на краю экрана
 def move_mouse_to_center_on_edge():
     screen_width, screen_height = 1920, 1080
+    border = 50  # Размер рамки
     center_x, center_y = screen_width // 2, screen_height // 2
 
     while True:
         x, y = pyautogui.position()
-        if x <= 0 or x >= screen_width - 1 or y <= 0 or y >= screen_height - 1:
+        if x <= border or x >= screen_width - border or y <= border or y >= screen_height - border:
             pyautogui.moveTo(center_x, center_y)
             pyautogui.rightClick(center_x, center_y)
         time.sleep(0.05)
