@@ -1,0 +1,97 @@
+import threading
+import logging
+import numpy as np
+import easyocr
+import mss
+import time
+import pyautogui
+import cv2
+import numpy as np
+from PIL import ImageGrab
+
+# Кабаны лучший
+
+# Настраиваем логирование
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+
+# Функция для работы с easyocr, mss и pyautogui
+def ocr_and_click_thread():
+    words_to_find = ["gonad", "fat"]
+    time.sleep(5)
+    reader = easyocr.Reader(['en'])
+    while True:
+        pyautogui.keyDown('alt')
+        with mss.mss() as sct:
+            monitor = {"top": 0, "left": 0, "width": 1920, "height": 800}
+            screenshot = sct.grab(monitor)
+            img = np.array(screenshot)
+        result = reader.readtext(img, detail=1)
+        for detection in result:
+            text = detection[1]
+            bbox = detection[0]
+            for word in words_to_find:
+                if word.lower() in text.lower():
+                    x_center = (bbox[0][0] + bbox[2][0]) / 2
+                    y_center = (bbox[0][1] + bbox[2][1]) / 2
+                    time.sleep(10)
+                    pyautogui.click(x=x_center, y=y_center, button='right')
+                    time.sleep(1)
+                    print(f"Клик правой кнопкой мыши по слову: {word}")
+                    break
+        time.sleep(1)
+
+
+# Функция для перемещения мыши в центр экрана и клика правой кнопкой мыши
+def center_click_thread():
+    while True:
+        screen_width, screen_height = pyautogui.size()
+        center_x = screen_width // 2
+        center_y = screen_height // 2
+        pyautogui.moveTo(center_x, center_y)
+        pyautogui.click(button='right')
+        time.sleep(2000000000)
+
+
+# Функция для работы с маской LAB
+def mask_click_thread():
+    l_min, l_max = 0, 255
+    a_min, a_max = 172, 255
+    b_min, b_max = 149, 177
+    min_area = 10
+    while True:
+        screenshot = np.array(ImageGrab.grab(bbox=(0, 0, 1920, 800)))
+        screenshot = cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR)
+        lab = cv2.cvtColor(screenshot, cv2.COLOR_BGR2LAB)
+        L, A, B = cv2.split(lab)
+        mask_L = cv2.inRange(L, l_min, l_max)
+        mask_A = cv2.inRange(A, a_min, a_max)
+        mask_B = cv2.inRange(B, b_min, b_max)
+        mask = cv2.bitwise_and(mask_L, cv2.bitwise_and(mask_A, mask_B))
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        filtered_contours = [c for c in contours if cv2.contourArea(c) > min_area]
+        if filtered_contours:
+            x, y, w, h = cv2.boundingRect(filtered_contours[0])
+            click_x = x + w // 2
+            click_y = y + h
+            pyautogui.rightClick(click_x, click_y)
+            time.sleep(10)
+            print(f"Клик на маске с контуром: {filtered_contours[0]}")
+        time.sleep(1)
+
+
+# Главный блок программы
+if __name__ == '__main__':
+    ocr_thread = threading.Thread(target=ocr_and_click_thread, daemon=True)
+    center_click_thread = threading.Thread(target=center_click_thread, daemon=True)
+    mask_thread = threading.Thread(target=mask_click_thread, daemon=True)
+
+    ocr_thread.start()
+    center_click_thread.start()
+    mask_thread.start()
+
+    ocr_thread.join()
+    center_click_thread.join()
+    mask_thread.join()
+
+    logging.info("Все скрипты завершены.")
